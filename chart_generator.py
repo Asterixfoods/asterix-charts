@@ -5,10 +5,15 @@
 Simple script that reads your exported Summary CSV and generates
 publication-quality matplotlib charts with error bars and hatching patterns.
 
-Usage:
+Usage (Local):
 1. Export Summary tab as CSV (name it 'summary_data.csv')
 2. Put this script and the CSV in the same folder
 3. Double-click start_charts.bat or run: python chart_generator.py
+
+Usage (Google Colab):
+1. Upload this script or paste it into a Colab cell
+2. Run it — a file upload dialog will appear for your CSV
+3. Charts display inline and are available for download
 
 Output: Creates 'asterix_charts' folder with all PNG files
 """
@@ -17,11 +22,22 @@ import os
 import sys
 import csv
 import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import numpy as np
 from collections import defaultdict
+
+# Detect Google Colab environment
+IN_COLAB = False
+try:
+    import google.colab
+    IN_COLAB = True
+except ImportError:
+    pass
+
+if not IN_COLAB:
+    matplotlib.use('Agg')  # Use non-interactive backend for local
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 # Column mapping (same as your Apps Script)
 COLUMNS = {
@@ -91,16 +107,36 @@ def safe_float(value):
     except (ValueError, TypeError):
         return None
 
+def upload_csv_colab(filename):
+    """Prompt the user to upload a CSV file in Google Colab"""
+    from google.colab import files
+    print(f"📤 Please upload your CSV file (expected name: {filename})")
+    uploaded = files.upload()
+    if not uploaded:
+        return None
+    # Use the first uploaded file regardless of its name
+    uploaded_name = list(uploaded.keys())[0]
+    if uploaded_name != filename:
+        os.rename(uploaded_name, filename)
+        print(f"   Renamed '{uploaded_name}' → '{filename}'")
+    return filename
+
 def read_csv_data(filename):
     """Read CSV data and return as list of rows"""
     if not os.path.exists(filename):
-        print(f"❌ Error: {filename} not found!")
-        print("Please make sure you:")
-        print("1. Export your Summary tab as CSV")
-        print("2. Save it as 'summary_data.csv'")
-        print("3. Put it in the same folder as this script")
-        return None
-    
+        if IN_COLAB:
+            result = upload_csv_colab(filename)
+            if result is None or not os.path.exists(filename):
+                print(f"❌ No file was uploaded.")
+                return None
+        else:
+            print(f"❌ Error: {filename} not found!")
+            print("Please make sure you:")
+            print("1. Export your Summary tab as CSV")
+            print("2. Save it as 'summary_data.csv'")
+            print("3. Put it in the same folder as this script")
+            return None
+
     data = []
     try:
         with open(filename, 'r', encoding='utf-8') as f:
@@ -276,38 +312,43 @@ def main():
     """Main function to generate all charts"""
     print("🪖 Asterix Chart Generator - Project Version")
     print("📊 Publication-quality matplotlib charts")
+    if IN_COLAB:
+        print("☁️  Running in Google Colab mode")
     print()
-    
+
     # Check for CSV file
     csv_file = 'summary_data.csv'
     data = read_csv_data(csv_file)
     if data is None:
-        input("\nPress Enter to exit...")
+        if not IN_COLAB:
+            input("\nPress Enter to exit...")
         return
-    
+
     # Create output directory
     output_dir = 'asterix_charts'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"📁 Created output directory: {output_dir}")
-    
+
     charts_generated = 0
-    
+
     # Generate individual charts
     for i, chart_def in enumerate(CHART_DEFS):
         print(f"📈 Generating: {chart_def['title']}")
-        
+
         chart_data = prepare_chart_data(data, chart_def)
         if chart_data is None:
             print(f"   ⚠️  No data found for {chart_def['title']}")
             continue
-        
+
         try:
             fig = create_publication_chart(chart_data, chart_def, i)
             if fig:
                 output_path = os.path.join(output_dir, f"{chart_def['fname']}.png")
-                fig.savefig(output_path, dpi=300, bbox_inches='tight', 
+                fig.savefig(output_path, dpi=300, bbox_inches='tight',
                            facecolor='white', pad_inches=0.1)
+                if IN_COLAB:
+                    plt.show()
                 plt.close(fig)
                 charts_generated += 1
                 print(f"   ✅ Saved: {chart_def['fname']}.png")
@@ -315,7 +356,7 @@ def main():
                 print(f"   ❌ Failed to create chart")
         except Exception as e:
             print(f"   ❌ Error: {e}")
-    
+
     # Generate time course chart
     print("📈 Generating: LF Time Course")
     try:
@@ -324,18 +365,31 @@ def main():
             tc_path = os.path.join(output_dir, 'LF_Time_Course.png')
             tc_fig.savefig(tc_path, dpi=300, bbox_inches='tight',
                           facecolor='white', pad_inches=0.1)
+            if IN_COLAB:
+                plt.show()
             plt.close(tc_fig)
             charts_generated += 1
             print("   ✅ Saved: LF_Time_Course.png")
     except Exception as e:
         print(f"   ❌ Time course error: {e}")
-    
+
     print()
     print(f"🎉 Generated {charts_generated} publication-quality charts!")
     print(f"📁 Output folder: {output_dir}")
     print("🖼️  All charts saved as high-resolution PNG files (300 DPI)")
-    print()
-    print("Charts ready for publication or presentation!")
+
+    # In Colab, offer to download the generated charts
+    if IN_COLAB and charts_generated > 0:
+        print()
+        print("📥 Downloading charts...")
+        from google.colab import files
+        for fname in os.listdir(output_dir):
+            if fname.endswith('.png'):
+                files.download(os.path.join(output_dir, fname))
+        print("✅ All charts sent to your browser downloads!")
+    else:
+        print()
+        print("Charts ready for publication or presentation!")
 
 if __name__ == "__main__":
     main()
