@@ -1,0 +1,6 @@
+matplotlib
+numpy
+gspread
+google-auth
+google-api-python-client
+flask
